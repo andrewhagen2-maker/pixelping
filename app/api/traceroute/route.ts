@@ -77,6 +77,16 @@ export async function GET(req: NextRequest) {
           );
           const text = await apiRes.text();
 
+          if (text.includes("API count exceeded")) {
+            resolve(
+              new Response(
+                "Rate limit reached (100 req/day on free tier). Try again tomorrow.",
+                { status: 429, headers: { "Content-Type": "text/plain" } }
+              )
+            );
+            return;
+          }
+
           const fallbackStream = new ReadableStream<Uint8Array>({
             start(controller) {
               controller.enqueue(

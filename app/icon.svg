@@ -1,0 +1,31 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" shape-rendering="crispEdges">
+  <!-- Background -->
+  <rect width="32" height="32" fill="#1a0e00"/>
+
+  <!-- Antenna ball -->
+  <rect x="13" y="0" width="6" height="5" fill="#f5a623"/>
+  <!-- Antenna stem -->
+  <rect x="14" y="5" width="4" height="2" fill="#f5a623"/>
+
+  <!-- Head main -->
+  <rect x="1" y="7" width="30" height="20" fill="#2d1a00"/>
+  <!-- Top border strip -->
+  <rect x="1" y="7" width="30" height="3" fill="#7a4a00"/>
+  <!-- Bottom border strip -->
+  <rect x="1" y="24" width="30" height="3" fill="#7a4a00"/>
+
+  <!-- Left eye outer (gold) -->
+  <rect x="5" y="11" width="8" height="8" fill="#f5a623"/>
+  <!-- Left eye pupil (dark) -->
+  <rect x="7" y="13" width="4" height="4" fill="#2d1a00"/>
+
+  <!-- Right eye outer (gold) -->
+  <rect x="19" y="11" width="8" height="8" fill="#f5a623"/>
+  <!-- Right eye pupil (dark) -->
+  <rect x="21" y="13" width="4" height="4" fill="#2d1a00"/>
+
+  <!-- Pixel smile: left corner dips, center bar higher -->
+  <rect x="7"  y="22" width="3"  height="2" fill="#f5a623"/>
+  <rect x="10" y="20" width="12" height="2" fill="#f5a623"/>
+  <rect x="22" y="22" width="3"  height="2" fill="#f5a623"/>
+</svg>

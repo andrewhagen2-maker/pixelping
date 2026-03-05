@@ -48,6 +48,7 @@ export async function GET(req: NextRequest) {
     };
 
     const child = spawn(cmd, args, { shell: false });
+    let hadSpawnError = false;
 
     child.stdout.on("data", (data: Buffer) => {
       resolveWithStream();
@@ -60,6 +61,11 @@ export async function GET(req: NextRequest) {
     });
 
     child.on("close", (code: number) => {
+      // If a spawn error occurred (e.g. ENOENT), the error handler takes over.
+      // code -2 is Node's way of surfacing ENOENT through the close event;
+      // guard against both orderings (error-before-close and close-before-error).
+      if (hadSpawnError || code === -2) return;
+
       resolveWithStream();
       streamController.enqueue(
         encoder.encode(`\n\n--- Traceroute complete (exit code: ${code}) ---`)
@@ -68,6 +74,7 @@ export async function GET(req: NextRequest) {
     });
 
     child.on("error", async (err: NodeJS.ErrnoException) => {
+      hadSpawnError = true;
       if (err.code === "ENOENT") {
         // System traceroute binary not available (e.g. Vercel serverless).
         // Fall back to HackerTarget's free traceroute API.

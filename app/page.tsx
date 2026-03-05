@@ -2,13 +2,6 @@ import Link from "next/link";
 
 const tools = [
   {
-    href: "/traceroute",
-    icon: "▶▶",
-    title: "TRACEROUTE",
-    desc: "Trace the network path to a remote host, hop by hop.",
-    tag: "NETWORK",
-  },
-  {
     href: "/whois",
     icon: "◉",
     title: "WHOIS LOOKUP",
@@ -135,7 +128,7 @@ export default function Home() {
               <span className="text-[0.5rem] text-pixel-gold border border-pixel-gold px-1">DMCA</span>
             </div>
             <p className="text-pixel-border text-[1.1rem] leading-loose font-mono">
-              Full network dossier — DNS, WHOIS, traceroute &amp; abuse contact in one shot.
+              Full network dossier — DNS, WHOIS, destination IP &amp; abuse contact in one shot.
             </p>
           </div>
         </div>

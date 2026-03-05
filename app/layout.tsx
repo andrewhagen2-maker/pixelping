@@ -26,7 +26,6 @@ export default function RootLayout({
             <nav className="flex gap-2 flex-wrap justify-end">
               {[
                 { href: "/investigate", label: "⚡ INVEST" },
-                { href: "/traceroute", label: "TRACE" },
                 { href: "/whois", label: "WHOIS" },
                 { href: "/reverse-ip", label: "REV-IP" },
                 { href: "/dns", label: "DNS" },

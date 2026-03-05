@@ -22,21 +22,9 @@ interface Section<T> {
   expanded: boolean;
 }
 
-interface TracerouteState {
-  status: Status;
-  lines: string[];
-  finalIp: string | null;
-  expanded: boolean;
-}
-
 // ── Helpers ────────────────────────────────────────────────────────────────────
 
-const IP_RE = /\b(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})\b/;
 const DOMAIN_RE = /^[a-zA-Z0-9][a-zA-Z0-9.\-]*\.[a-zA-Z]{2,}$/;
-
-function isTimeout(line: string) {
-  return /\*\s*\*\s*\*|timed out|no response/i.test(line);
-}
 
 function parseAbuseContact(whoisText: string): AbuseContact {
   const emailMatch =
@@ -79,7 +67,7 @@ function parseWhoisSummary(text: string): Record<string, string> {
   return fields;
 }
 
-// ── Status Badge (UI chrome — stays small) ─────────────────────────────────────
+// ── Status Badge ───────────────────────────────────────────────────────────────
 
 function StatusBadge({ status, label }: { status: Status; label?: string }) {
   const configs: Record<Status, { text: string; blink?: boolean }> = {
@@ -97,7 +85,7 @@ function StatusBadge({ status, label }: { status: Status; label?: string }) {
   );
 }
 
-// ── Section Header (UI chrome — stays small) ───────────────────────────────────
+// ── Section Header ─────────────────────────────────────────────────────────────
 
 function SectionHeader({
   num, title, status, statusLabel, expanded, onToggle, hasData,
@@ -133,19 +121,17 @@ export default function InvestigatePage() {
 
   const [dns, setDns] = useState<Section<DnsResult>>({ status: "idle", data: null, expanded: false });
   const [domainWhois, setDomainWhois] = useState<Section<WhoisResult>>({ status: "idle", data: null, expanded: false });
-  const [traceroute, setTraceroute] = useState<TracerouteState>({ status: "idle", lines: [], finalIp: null, expanded: true });
+  const [resolvedIp, setResolvedIp] = useState<string | null>(null);
   const [geoip, setGeoip] = useState<Section<GeoResult>>({ status: "idle", data: null, expanded: false });
   const [ipWhois, setIpWhois] = useState<Section<WhoisResult>>({ status: "idle", data: null, expanded: false });
   const [abuseContact, setAbuseContact] = useState<AbuseContact>({ email: null, name: null, phone: null });
 
   const abortRef = useRef<AbortController | null>(null);
-  const finalIpRef = useRef<string | null>(null);
 
-  // Phase 2: once traceroute finalIp is set, fire geoip + ipWhois in parallel
+  // Phase 2: once A-record IP is resolved, fire geoip + ipWhois in parallel
   useEffect(() => {
-    if (!traceroute.finalIp) return;
-    const ip = traceroute.finalIp;
-    finalIpRef.current = ip;
+    if (!resolvedIp) return;
+    const ip = resolvedIp;
 
     setGeoip((s) => ({ ...s, status: "running" }));
     fetch(`/api/geoip?ip=${encodeURIComponent(ip)}`)
@@ -165,7 +151,7 @@ export default function InvestigatePage() {
       })
       .catch((e) => setIpWhois({ status: "error", data: null, error: e.message, expanded: false }));
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [traceroute.finalIp]);
+  }, [resolvedIp]);
 
   // Phase 3: once ipWhois data arrives, parse abuse contact
   useEffect(() => {
@@ -174,7 +160,7 @@ export default function InvestigatePage() {
     }
   }, [ipWhois.data]);
 
-  const runInvestigate = useCallback(async () => {
+  const runInvestigate = useCallback(() => {
     const d = domain.trim().toLowerCase().replace(/^https?:\/\//, "").replace(/\/.*$/, "");
     if (!d) return;
 
@@ -188,11 +174,10 @@ export default function InvestigatePage() {
     abortRef.current = new AbortController();
 
     setRunning(true);
-    finalIpRef.current = null;
+    setResolvedIp(null);
 
     setDns({ status: "running", data: null, expanded: true });
     setDomainWhois({ status: "running", data: null, expanded: true });
-    setTraceroute({ status: "running", lines: [], finalIp: null, expanded: true });
     setGeoip({ status: "idle", data: null, expanded: false });
     setIpWhois({ status: "idle", data: null, expanded: false });
     setAbuseContact({ email: null, name: null, phone: null });
@@ -204,51 +189,26 @@ export default function InvestigatePage() {
     ]).then(([dnsData, whoisData]) => {
       setDns({ status: dnsData.error ? "error" : "done", data: dnsData.error ? null : dnsData, error: dnsData.error, expanded: false });
       setDomainWhois({ status: whoisData.error ? "error" : "done", data: whoisData.error ? null : whoisData, error: whoisData.error, expanded: false });
+
+      // Extract first A record IP — this drives Phase 2 (geoip + ip whois)
+      if (!dnsData.error && dnsData.results) {
+        const aRec = (dnsData.results as DnsRecord[]).find((r) => r.type === "A");
+        const firstIp = aRec?.records?.[0];
+        if (typeof firstIp === "string") setResolvedIp(firstIp);
+      }
     }).catch(() => {
       setDns((s) => s.status === "running" ? { ...s, status: "error", error: "Request failed" } : s);
       setDomainWhois((s) => s.status === "running" ? { ...s, status: "error", error: "Request failed" } : s);
-    });
-
-    // Phase 1: Traceroute stream
-    let lastIp: string | null = null;
-    try {
-      const res = await fetch(`/api/traceroute?host=${encodeURIComponent(d)}`, {
-        signal: abortRef.current.signal,
-      });
-      const reader = res.body!.getReader();
-      const decoder = new TextDecoder();
-
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-        const chunk = decoder.decode(value);
-        const lines = chunk.split("\n");
-        setTraceroute((prev) => ({ ...prev, lines: [...prev.lines, ...lines.filter((l) => l.trim())] }));
-        for (const line of lines) {
-          if (!isTimeout(line)) {
-            const m = line.match(IP_RE);
-            if (m) lastIp = m[1];
-          }
-        }
-      }
-
-      setTraceroute((prev) => ({ ...prev, status: "done", finalIp: lastIp, expanded: true }));
-    } catch (e: unknown) {
-      if ((e as Error).name !== "AbortError") {
-        setTraceroute((prev) => ({ ...prev, status: "error", error: (e as Error).message }));
-      }
-    } finally {
+    }).finally(() => {
       setRunning(false);
-    }
+    });
   }, [domain]);
 
-  const hasAnyResult =
-    dns.status !== "idle" || domainWhois.status !== "idle" || traceroute.status !== "idle";
+  const hasAnyResult = dns.status !== "idle" || domainWhois.status !== "idle";
 
   const toggle = (setter: React.Dispatch<React.SetStateAction<Section<unknown>>>) =>
     (setter as React.Dispatch<React.SetStateAction<Section<DnsResult | WhoisResult | GeoResult>>>)((s) => ({ ...s, expanded: !s.expanded }));
 
-  // Shared class for all result data text
   const dataText = "text-[0.9rem] font-mono";
 
   return (
@@ -258,8 +218,8 @@ export default function InvestigatePage() {
         <div className="text-pixel-gold text-sm mb-1">⚡ INVESTIGATE</div>
         <div className="h-1 bg-pixel-border w-32 mb-4" />
         <p className="text-pixel-border text-[1.0rem] font-mono leading-loose">
-          Full network dossier in one shot — DNS, WHOIS, traceroute to destination
-          IP, geolocation, and abuse contact for DMCA notices.
+          Full network dossier in one shot — DNS, WHOIS, destination IP via A record,
+          geolocation, and abuse contact for DMCA notices.
         </p>
       </div>
 
@@ -362,31 +322,26 @@ export default function InvestigatePage() {
             )}
           </div>
 
-          {/* ③ TRACEROUTE */}
+          {/* ③ DESTINATION IP (from A record) */}
           <div className="border-4 border-pixel-border">
             <SectionHeader
-              num="③" title="TRACEROUTE" status={traceroute.status}
-              statusLabel={
-                traceroute.status === "running"
-                  ? `STREAMING... (${traceroute.lines.length} hops)`
-                  : traceroute.status === "done" ? "DONE" : traceroute.status.toUpperCase()
-              }
-              expanded={traceroute.expanded}
-              onToggle={() => setTraceroute((s) => ({ ...s, expanded: !s.expanded }))}
-              hasData={traceroute.lines.length > 0}
+              num="③" title="DESTINATION IP"
+              status={dns.status === "running" ? "running" : resolvedIp ? "done" : dns.status === "done" ? "error" : "idle"}
+              statusLabel={dns.status === "running" ? "RESOLVING..." : resolvedIp ? "DONE" : "NO A RECORD"}
+              expanded={false} onToggle={() => {}} hasData={false}
             />
-            {traceroute.finalIp && (
-              <div className="px-4 py-2 border-b border-pixel-border bg-pixel-darkbrown flex items-center gap-3 flex-wrap">
-                <span className={`text-pixel-border ${dataText}`}>DESTINATION IP</span>
-                <span className={`text-pixel-gold ${dataText}`}>{traceroute.finalIp}</span>
-                <span className="text-pixel-accent text-[0.55rem]">→ triggering IP analysis</span>
-              </div>
-            )}
-            {traceroute.expanded && traceroute.lines.length > 0 && (
-              <pre className={`pixel-results ${dataText} max-h-64 overflow-y-auto m-4 mt-2`}>
-                {traceroute.lines.join("\n")}
-              </pre>
-            )}
+            <div className="px-4 py-3 flex items-center gap-3 flex-wrap">
+              {resolvedIp ? (
+                <>
+                  <span className={`text-pixel-gold ${dataText}`}>{resolvedIp}</span>
+                  <span className="text-pixel-accent text-[0.55rem]">→ triggering IP analysis</span>
+                </>
+              ) : dns.status === "done" ? (
+                <span className={`text-pixel-border ${dataText}`}>No A record found for this domain.</span>
+              ) : (
+                <span className={`text-pixel-border ${dataText}`}>Waiting for DNS...</span>
+              )}
+            </div>
           </div>
 
           {/* ④ IP GEOLOCATION */}

@@ -52,6 +52,14 @@ export default function RootLayout({
           <p className="text-pixel-border text-[0.55rem] leading-loose">
             PIXELPING // NETWORK DIAGNOSTICS // USE RESPONSIBLY
           </p>
+          <div className="flex justify-center gap-6 mt-3">
+            <Link href="/privacy" className="text-pixel-border text-[0.5rem] hover:text-pixel-gold no-underline">
+              PRIVACY POLICY
+            </Link>
+            <Link href="/terms" className="text-pixel-border text-[0.5rem] hover:text-pixel-gold no-underline">
+              TERMS OF SERVICE
+            </Link>
+          </div>
         </footer>
         <Analytics />
       </body>
